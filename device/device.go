@@ -165,9 +165,7 @@ func Open(path string, options ...Option) (*Device, error) {
 	// get capability
 	cap, err := v4l2.GetCapability(dev.fd)
 	if err != nil {
-		if err := v4l2.CloseDevice(dev.fd); err != nil {
-			return nil, fmt.Errorf("device %s: closing after failure: %s", path, err)
-		}
+		_ = v4l2.CloseDevice(dev.fd) // We want to get the original error, not the close error
 		return nil, fmt.Errorf("device open: %s: %w", path, err)
 	}
 	dev.cap = cap
@@ -181,10 +179,12 @@ func Open(path string, options ...Option) (*Device, error) {
 	switch dev.config.ioMethod {
 	case IOMethodReadWrite:
 		if !dev.cap.IsReadWriteSupported() {
+			_ = v4l2.CloseDevice(dev.fd)
 			return nil, fmt.Errorf("device open: device does not support read/write IO")
 		}
 	default: // IOMethodStreaming
 		if !dev.cap.IsStreamingSupported() {
+			_ = v4l2.CloseDevice(dev.fd)
 			return nil, fmt.Errorf("device open: device does not support streaming IO")
 		}
 	}
@@ -196,13 +196,12 @@ func Open(path string, options ...Option) (*Device, error) {
 	case cap.IsVideoOutputSupported():
 		dev.bufType = v4l2.BufTypeVideoOutput
 	default:
-		if err := v4l2.CloseDevice(dev.fd); err != nil {
-			return nil, fmt.Errorf("device open: %s: closing after failure: %s", path, err)
-		}
+		_ = v4l2.CloseDevice(dev.fd)
 		return nil, fmt.Errorf("device open: %s: %w", path, v4l2.ErrorUnsupportedFeature)
 	}
 
 	if dev.config.bufType != 0 && dev.config.bufType != dev.bufType {
+		_ = v4l2.CloseDevice(dev.fd)
 		return nil, fmt.Errorf("device open: does not support buffer stream type")
 	}
 
@@ -228,11 +227,13 @@ func Open(path string, options ...Option) (*Device, error) {
 	// set pix format
 	if dev.config.pixFormat != (v4l2.PixFormat{}) {
 		if err := dev.SetPixFormat(dev.config.pixFormat); err != nil {
+			_ = v4l2.CloseDevice(dev.fd)
 			return nil, fmt.Errorf("device open: %s: set format: %w", path, err)
 		}
 	} else {
 		dev.config.pixFormat, err = v4l2.GetPixFormat(dev.fd)
 		if err != nil {
+			_ = v4l2.CloseDevice(dev.fd)
 			return nil, fmt.Errorf("device open: %s: get default format: %w", path, err)
 		}
 	}
@@ -240,6 +241,7 @@ func Open(path string, options ...Option) (*Device, error) {
 	// set fps
 	if dev.config.fps != 0 {
 		if err := dev.SetFrameRate(dev.config.fps); err != nil {
+			_ = v4l2.CloseDevice(dev.fd)
 			return nil, fmt.Errorf("device open: %s: set fps: %w", path, err)
 		}
 	} else {
@@ -258,6 +260,7 @@ func Open(path string, options ...Option) (*Device, error) {
 func (d *Device) Close() error {
 	if d.streaming.Load() {
 		if err := d.Stop(); err != nil {
+			_ = v4l2.CloseDevice(d.fd)
 			return err
 		}
 	}
